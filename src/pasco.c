@@ -43,6 +43,10 @@
 #  include <sys/endian.h> 
 # elif defined(__linux__) || defined(__CYGWIN__)
 #  include <endian.h> 
+# elif defined(__APPLE__)
+#  include <libkern/OSByteOrder.h>
+#  define le32toh(x) OSSwapLittleToHostInt32(x)
+#  define le64toh(x) OSSwapLittleToHostInt64(x)
 # endif
 
 //
@@ -58,23 +62,7 @@ ssize_t pread( int d, void *buf, size_t nbytes, off_t offset) {
 #endif
 
 //
-/* Backwards ASCII Hex to Integer */
-//
-unsigned int bah_to_i( char *val, int size ) {
-  int total;
-  int i;
-
-  total = 0;
-
-  for ( i=0; i < size; i++ ) {
-    total += ((unsigned char)val[i] << 8*i);
-  }
-
-  return total;
-}
-
-//
-/* Backwards 8 byte ASCII Hex to time_t */
+/* uint64_t Windows NT time stamp to time_t (and timespec) Unix Timestamp */
 //
 time_t win_time_to_unix( uint64_t val , struct timespec *ts) {
   long nsec;
@@ -395,7 +383,6 @@ int main( int argc, char **argv ) {
 
       for (offset = hashoff + 16; offset < hashoff+hashsize; offset = offset+8) {
         pread( history_file, hashrecflagsstr, 4, offset );
-        // hashrecflags = bah_to_i( hashrecflagsstr, 4 );
 
         pread( history_file, &fourbytes, 4, offset+4 );
         currrecoff = le32toh(fourbytes);
