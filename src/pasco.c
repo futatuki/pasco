@@ -30,6 +30,7 @@
 
 #include <sys/types.h>
 #include <sys/uio.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -37,6 +38,12 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
+# if defined(__OpenBSD__) || defined(__NetBSD__) || defined(__FreeBSD__) \
+     || defined(__DragonFly__)
+#  include <sys/endian.h> 
+# elif defined(__linux__) || defined(__CYGWIN__)
+#  include <endian.h> 
+# endif
 
 //
 /* This is the default block size for an activity record */
@@ -69,40 +76,26 @@ unsigned int bah_to_i( char *val, int size ) {
 //
 /* Backwards 8 byte ASCII Hex to time_t */
 //
-time_t win_time_to_unix( char *val ) {
-  unsigned long low, high;
-  double dbl;
-  time_t total;
+time_t win_time_to_unix( uint64_t val , struct timespec *ts) {
+  long nsec;
+  time_t sec;
 
-  char fourbytes[4]; 
-
-  fourbytes[0] = val[0];
-  fourbytes[1] = val[1];
-  fourbytes[2] = val[2];
-  fourbytes[3] = val[3];
-
-  low = bah_to_i( fourbytes, 4 );
-
-  fourbytes[0] = val[4];
-  fourbytes[1] = val[5];
-  fourbytes[2] = val[6];
-  fourbytes[3] = val[7];
-
-  high = bah_to_i( fourbytes, 4 );
-
-  dbl = ((double)high)*(pow(2,32));
-  dbl += (double)(low);
-
-  if ( dbl==0 ) {
-    return 0;
+  if (val == 0) {
+    sec = 0; 
+    if (ts != NULL) {
+      ts->tv_sec = 0;
+      ts->tv_nsec = 0;
+    }
   }
-
-  dbl *= 1.0e-7;
-  dbl -= 11644473600;
-
-  total = (double)dbl;
-
-  return total;
+  else {
+    sec  = (val / 10000000L) - 11644473600;
+    if (ts != NULL) {
+      nsec = (val % 10000000L) * 100;
+      ts->tv_sec  = sec;
+      ts->tv_nsec = nsec;
+    }
+  }
+  return sec;
 }
 
 //
@@ -124,31 +117,36 @@ int printablestring( char *str ) {
 //
 /* This function parses a REDR record. */
 //
-void parse_redr( int history_file, int currrecoff, char *delim, int filesize, char *type ) {
-  char fourbytes[4];
-  char chr;
+void parse_redr( int history_file, off_t currrecoff, const char *delim, size_t filesize, char *type ) {
+  uint32_t fourbytes;
   int i;
-  int reclen;
+  size_t reclen;
+  off_t redroff;
   char *url;
   char *filename;
   char *httpheaders;
   char ascmodtime[26], ascaccesstime[26];
   char dirname[9];
+  char *cp;
 
 
-  pread( history_file, fourbytes, 4, currrecoff+4 );
-  reclen = bah_to_i( fourbytes, 4 )*BLOCK_SIZE; 
+  pread( history_file, &fourbytes, 4, currrecoff+4 );
+  reclen = le32toh(fourbytes) * BLOCK_SIZE;
 
   url = (char *)malloc( reclen+1 );
-            
-  i = 0;
-  pread( history_file, &chr, 1, currrecoff+0x10 );
-  while ( chr != '\0' && currrecoff+0x10+i+1 < filesize ) {
-    url[i] = chr;
-    pread( history_file, &chr, 1, currrecoff+0x10+i+1 );
-    i++; 
-  } 
-  url[i] = '\0';
+
+  for (redroff = currrecoff + 0x10, cp = url, i = 0;
+        redroff < filesize && i < reclen ; redroff++, cp++, i++) {
+    pread( history_file, cp, 1, redroff );
+    if ( *cp == '\0' ) break;
+  }
+  *cp = '\0';
+  if (i == reclen) {
+      fprintf(stderr,
+          "warn: corrupted data or unknown structure in parse_redr: "
+          "offset: 0x%llx\n", (long long)currrecoff);
+  }
+
 
   filename = (char *)malloc( 1 );
   filename[0] = '\0';
@@ -182,16 +180,16 @@ void parse_redr( int history_file, int currrecoff, char *delim, int filesize, ch
 //
 /* This function parses a URL and LEAK activity record. */
 //
-void parse_url( int history_file, int currrecoff, char *delim, int filesize, char *type ) {
-  char fourbytes[4];
-  char eightbytes[8];
+void parse_url( int history_file, off_t currrecoff, char *delim, size_t filesize, char *type ) {
+  uint32_t fourbytes;
+  uint64_t eightbytes;
   char chr;
-  int filenameoff;
-  int httpheadersoff;
-  int urloff;
+  off_t filenameoff;
+  off_t httpheadersoff;
+  off_t urloff;
   int i;
-  int reclen;
-  int dirnameoff;
+  size_t reclen;
+  off_t dirnameoff;
   time_t modtime;
   time_t accesstime;
   char ascmodtime[26], ascaccesstime[26];
@@ -199,16 +197,17 @@ void parse_url( int history_file, int currrecoff, char *delim, int filesize, cha
   char *url;
   char *filename;
   char *httpheaders;
+  char *cp;
 
 
-  pread( history_file, fourbytes, 4, currrecoff+4 );
-  reclen = bah_to_i( fourbytes, 4 )*BLOCK_SIZE; 
+  pread( history_file, &fourbytes, 4, currrecoff+4 );
+  reclen = le32toh(fourbytes) * BLOCK_SIZE;
 
-  pread( history_file, eightbytes, 8, currrecoff+8 );
-  modtime = win_time_to_unix( eightbytes );
+  pread( history_file, &eightbytes, 8, currrecoff+8 );
+  modtime = win_time_to_unix( le64toh(eightbytes), NULL );
   
-  pread( history_file, eightbytes, 8, currrecoff+16 );
-  accesstime = win_time_to_unix( eightbytes );
+  pread( history_file, &eightbytes, 8, currrecoff+16 );
+  accesstime = win_time_to_unix( le64toh(eightbytes), NULL );
  
   ctime_r( &accesstime, ascaccesstime );
   ctime_r( &modtime, ascmodtime );
@@ -224,30 +223,36 @@ void parse_url( int history_file, int currrecoff, char *delim, int filesize, cha
   url = (char *)malloc( reclen+1 );
 
   pread( history_file, &chr, 1, currrecoff+0x34 );
-  urloff = (unsigned char)chr;
-
-  i = 0;
-  pread( history_file, &chr, 1, currrecoff+urloff );
-  while ( chr != '\0' && currrecoff+urloff+i+1 < filesize ) {
-    url[i] = chr;
-    pread( history_file, &chr, 1, currrecoff+urloff+i+1 );
-    i++; 
-  } 
-  url[i] = '\0';
+  for (urloff = currrecoff + (unsigned char)chr, cp = url, i = 0;
+        urloff < filesize && i < reclen ; urloff++, cp++, i++) {
+    pread( history_file, cp, 1, urloff );
+    if ( *cp == '\0' ) break;
+  }
+  *cp = '\0';
+  if (i == reclen) {
+      fprintf(stderr,
+          "warn: corrupted data or unknown structure in parse_url, url field: "
+          "offset: 0x%llx\n", (long long)currrecoff);
+  }
 
   filename = (char *)malloc( reclen+1 );
 
-  pread( history_file, fourbytes, 4, currrecoff+0x3C );
-  filenameoff = bah_to_i( fourbytes, 4 ) + currrecoff; 
+  pread( history_file, &fourbytes, 4, currrecoff+0x3C );
+  filenameoff = le32toh(fourbytes) + currrecoff; 
+  for ( filenameoff = currrecoff + le32toh(fourbytes),
+            cp = filename, i = 0;
+        filenameoff < filesize && i < reclen ;
+        filenameoff++, cp++, i++) {
+    pread( history_file, cp, 1, filenameoff );
+    if ( *cp == '\0' ) break;
+  }
+  *cp = '\0';
+  if (i == reclen) {
+      fprintf(stderr,
+          "warn: corrupted data or unknown structure in parse_url, filename field: "
+          "offset: 0x%llx\n", (long long)currrecoff);
+  }
 
-  i = 0;
-  pread( history_file, &chr, 1, filenameoff );
-  while ( chr != '\0' && filenameoff+i+1 < filesize ) {
-    filename[i] = chr;
-    pread( history_file, &chr, 1, filenameoff+i+1 );
-    i++; 
-  } 
-  filename[i] = '\0';
 
   pread( history_file, &chr, 1, currrecoff+0x39 );
   dirnameoff = (unsigned char)chr;
@@ -261,19 +266,21 @@ void parse_url( int history_file, int currrecoff, char *delim, int filesize, cha
 
   httpheaders = (char *)malloc( reclen+1 );
 
-  pread( history_file, fourbytes, 4, currrecoff+0x44 );
-  httpheadersoff = bah_to_i( fourbytes, 4 ) + currrecoff; 
+  pread( history_file, &fourbytes, 4, currrecoff+0x44 );
+  for ( httpheadersoff = currrecoff + le32toh(fourbytes),
+            cp = httpheaders, i = 0;
+        httpheadersoff < filesize && i < reclen ;
+        httpheadersoff++, cp++, i++) {
+    pread( history_file, cp, 1, httpheadersoff );
+    if ( *cp == '\0' ) break;
+  }
+  *cp = '\0';
+  if (i == reclen) {
+      fprintf(stderr,
+          "warn: corrupted data or unknown structure in parse_url, httpheaders field: "
+          "offset: 0x%llx\n", (long long)currrecoff);
+  }
 
-  i = 0;
-  pread( history_file, &chr, 1, httpheadersoff );
-
-  while ( chr != '\0' && httpheadersoff+i+1 < currrecoff+reclen && httpheadersoff+i+1 < filesize ) {
-    httpheaders[i] = chr;
-    pread( history_file, &chr, 1, httpheadersoff+i+1 );
-    i++; 
-  } 
-  httpheaders[i] = '\0';
- 
   printablestring( type );
   printablestring( url );
   printablestring( ascmodtime );
@@ -320,19 +327,18 @@ void usage( void ) {
 //
 int main( int argc, char **argv ) {
   int history_file;
-  char fourbytes[4];
+  uint32_t fourbytes;
   char delim[10];
-  int currrecoff;
-  int filesize;
-  int i;
+  off_t currrecoff;
+  size_t filesize;
   int opt;
   char type[5];
   char hashrecflagsstr[4];
-  int hashoff;
-  int hashsize;
-  int nexthashoff;
-  int offset;
-  int hashrecflags;
+  off_t hashoff;
+  size_t hashsize;
+  off_t nexthashoff;
+  off_t offset;
+  // int hashrecflags;
   int deleted = 0;
 
 
@@ -352,8 +358,8 @@ int main( int argc, char **argv ) {
     exit( -3 ); 
   }
 
-  pread( history_file, fourbytes, 4, 0x1C );
-  filesize = bah_to_i( fourbytes, 4 );
+  pread( history_file, &fourbytes, 4, 0x1C );
+  filesize = le32toh(fourbytes);
 
   while ((opt = getopt( argc, argv, "dt:f:")) != -1) {
     switch(opt) {
@@ -376,32 +382,28 @@ int main( int argc, char **argv ) {
 
   if (deleted == 0) {
 
-    pread( history_file, fourbytes, 4, 0x20 );
-    hashoff = bah_to_i( fourbytes, 4 );
+    pread( history_file, &fourbytes, 4, 0x20 );
+    hashoff = le32toh(fourbytes);
   
     while (hashoff != 0 ) {
 
-      pread( history_file, fourbytes, 4, hashoff+8 );
-      nexthashoff = bah_to_i( fourbytes, 4 );
+      pread( history_file, &fourbytes, 4, hashoff+8 );
+      nexthashoff = le32toh(fourbytes);
 
-      pread( history_file, fourbytes, 4, hashoff+4 );
-      hashsize = bah_to_i( fourbytes, 4 )*BLOCK_SIZE;
+      pread( history_file, &fourbytes, 4, hashoff+4 );
+      hashsize = le32toh(fourbytes) * BLOCK_SIZE;
 
       for (offset = hashoff + 16; offset < hashoff+hashsize; offset = offset+8) {
         pread( history_file, hashrecflagsstr, 4, offset );
-        hashrecflags = bah_to_i( hashrecflagsstr, 4 );
+        // hashrecflags = bah_to_i( hashrecflagsstr, 4 );
 
-        pread( history_file, fourbytes, 4, offset+4 );
-        currrecoff = bah_to_i( fourbytes, 4 );
+        pread( history_file, &fourbytes, 4, offset+4 );
+        currrecoff = le32toh(fourbytes);
 
         if (hashrecflagsstr[0] != 0x03 && currrecoff != 0xBADF00D ) {
           if (currrecoff != 0) {
 
-            pread( history_file, fourbytes, 4, currrecoff );
-
-            for (i=0;i < 4;i++) {
-              type[i] = fourbytes[i];
-            }
+            pread( history_file, type, 4, currrecoff );
             type[4] = '\0';
 
             if (type[0] == 'R' && type[1] == 'E' && type[2] == 'D' && type[3] == 'R' ) {
@@ -428,11 +430,7 @@ int main( int argc, char **argv ) {
 
     while (currrecoff < filesize ) {
 
-      pread( history_file, fourbytes, 4, currrecoff );
-
-      for (i=0;i < 4;i++) {
-        type[i] = fourbytes[i];
-      }
+      pread( history_file, type, 4, currrecoff );
       type[4] = '\0';
 
       if (type[0] == 'R' && type[1] == 'E' && type[2] == 'D' && type[3] == 'R' ) {
@@ -454,4 +452,5 @@ int main( int argc, char **argv ) {
 
   }
   close (history_file);
+  return 0;
 }
