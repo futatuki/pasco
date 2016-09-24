@@ -35,6 +35,8 @@
 #include <stdio.h>
 #include <time.h>
 #include <math.h>
+#include <string.h>
+#include <stdlib.h>
 
 //
 /* This is the default block size for an activity record */
@@ -122,17 +124,11 @@ int printablestring( char *str ) {
 //
 /* This function parses a REDR record. */
 //
-int parse_redr( int history_file, int currrecoff, char *delim, int filesize, char *type ) {
+void parse_redr( int history_file, int currrecoff, char *delim, int filesize, char *type ) {
   char fourbytes[4];
-  char hashrecflagsstr[4];
   char chr;
-  int filenameoff;
-  int httpheadersoff;
   int i;
   int reclen;
-  int dirnameoff;
-  time_t modtime;
-  time_t accesstime;
   char *url;
   char *filename;
   char *httpheaders;
@@ -180,14 +176,14 @@ int parse_redr( int history_file, int currrecoff, char *delim, int filesize, cha
   free( url );
   free( filename );
   free( httpheaders );
+  return;
 }
 
 //
 /* This function parses a URL and LEAK activity record. */
 //
-int parse_url( int history_file, int currrecoff, char *delim, int filesize, char *type ) {
+void parse_url( int history_file, int currrecoff, char *delim, int filesize, char *type ) {
   char fourbytes[4];
-  char hashrecflagsstr[4];
   char eightbytes[8];
   char chr;
   int filenameoff;
@@ -300,10 +296,12 @@ int parse_url( int history_file, int currrecoff, char *delim, int filesize, char
   free( url );
   free( filename );
   free( httpheaders );
+  return;
 }
 
-int parse_unknown( int history_file, int currrecoff, char *delim, int filesize, char *type ) {
+void parse_unknown( int history_file, int currrecoff, char *delim, int filesize, char *type ) {
   type[0] = '\0'; 
+  return;
 }
 
 //
@@ -323,14 +321,11 @@ void usage( void ) {
 int main( int argc, char **argv ) {
   int history_file;
   char fourbytes[4];
-  char chr;
   char delim[10];
   int currrecoff;
   int filesize;
   int i;
   int opt;
-  time_t modtime;
-  time_t accesstime;
   char type[5];
   char hashrecflagsstr[4];
   int hashoff;

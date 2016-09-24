@@ -1,9 +1,17 @@
-all: install
+all: pasco
 
-install:  pasco.c
-	gcc -o pasco pasco.c -lm -lc;cp pasco ../bin
+CC ?= gcc 
 
-installwin:  pasco.c
+install:  pasco
+	cp pasco ../bin
+
+pasco:  pasco.c
+	${CC} -Wall -o pasco pasco.c -lm -lc
+
+installwin:  pasco.exe
+	pasco.exe ../bin
+
+pasco.exe:  pasco.c
 	gcc -DCYGWIN -o pasco.exe pasco.c -lm -lc;cp pasco.exe ../bin
 
 clean: 
