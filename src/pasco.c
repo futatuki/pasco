@@ -49,6 +49,8 @@
 #  define le64toh(x) OSSwapLittleToHostInt64(x)
 # endif
 
+const char *revision = "$Id$";
+
 //
 /* This is the default block size for an activity record */
 //
@@ -111,9 +113,12 @@ void timespec_to_isoformat(const struct timespec *ts, char *isostr){
     snprintf(toffstr, 7, "%c%02u:%02u",
         toffsign, (unsigned int)toffh, (unsigned int)toffm);
   }
+  else {
+    toffstr[0] = 'Z', toffstr[1] = '\0';
+  }
   if (ts->tv_nsec  == 0) {
     snprintf(isostr, 26, "%04u-%02u-%02uT%02u:%02u:%02u%s",
-        (unsigned int) tm_p->tm_year,
+        (unsigned int) (tm_p->tm_year + 1900),
         (unsigned int) tm_p->tm_mon,
         (unsigned int) tm_p->tm_mday,
         (unsigned int) tm_p->tm_hour,
@@ -122,8 +127,8 @@ void timespec_to_isoformat(const struct timespec *ts, char *isostr){
         toffstr);
   }
   else {
-    snprintf(isostr, 36, "%04u-%02u-%02uT%02u:%02u:%02u.%9lu%s",
-        (unsigned int) tm_p->tm_year,
+    snprintf(isostr, 36, "%04u-%02u-%02uT%02u:%02u:%02u.%09lu%s",
+        (unsigned int) (tm_p->tm_year + 1900),
         (unsigned int) tm_p->tm_mon,
         (unsigned int) tm_p->tm_mday,
         (unsigned int) tm_p->tm_hour,

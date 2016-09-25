@@ -1,3 +1,5 @@
+# $Id$
+
 all: pasco
 
 CC ?= gcc 
