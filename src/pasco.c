@@ -87,6 +87,55 @@ time_t win_time_to_unix( uint64_t val , struct timespec *ts) {
 }
 
 //
+/* timespec to ISO format timestamp string */
+//
+void timespec_to_isoformat(const struct timespec *ts, char *isostr){
+  struct tm *tm_p;
+  int toff;
+  char toffsign;
+  int toffh, toffm;
+  char toffstr[7];
+
+  tm_p = localtime(&(ts->tv_sec)); 
+  if (tm_p->tm_gmtoff != 0) {
+    if (tm_p->tm_gmtoff > 0) {
+      toffsign = '+';
+      toff = tm_p->tm_gmtoff / 60; 
+    }
+    else {
+      toffsign = '-';
+      toff = - tm_p->tm_gmtoff / 60; 
+    }
+    toffh = toff / 60;
+    toffm = toff % 60;
+    snprintf(toffstr, 7, "%c%02u:%02u",
+        toffsign, (unsigned int)toffh, (unsigned int)toffm);
+  }
+  if (ts->tv_nsec  == 0) {
+    snprintf(isostr, 26, "%04u-%02u-%02uT%02u:%02u:%02u%s",
+        (unsigned int) tm_p->tm_year,
+        (unsigned int) tm_p->tm_mon,
+        (unsigned int) tm_p->tm_mday,
+        (unsigned int) tm_p->tm_hour,
+        (unsigned int) tm_p->tm_min,
+        (unsigned int) tm_p->tm_sec,
+        toffstr);
+  }
+  else {
+    snprintf(isostr, 36, "%04u-%02u-%02uT%02u:%02u:%02u.%9lu%s",
+        (unsigned int) tm_p->tm_year,
+        (unsigned int) tm_p->tm_mon,
+        (unsigned int) tm_p->tm_mday,
+        (unsigned int) tm_p->tm_hour,
+        (unsigned int) tm_p->tm_min,
+        (unsigned int) tm_p->tm_sec,
+        (unsigned long) (ts->tv_nsec),
+        toffstr);
+  }
+  return;
+}
+
+//
 /* This function prepares a string for nice output */
 //
 int printablestring( char *str ) {
@@ -168,7 +217,7 @@ void parse_redr( int history_file, off_t currrecoff, const char *delim, size_t f
 //
 /* This function parses a URL and LEAK activity record. */
 //
-void parse_url( int history_file, off_t currrecoff, char *delim, size_t filesize, char *type ) {
+void parse_url( int history_file, off_t currrecoff, char *delim, size_t filesize, char *type , int isofmt) {
   uint32_t fourbytes;
   uint64_t eightbytes;
   char chr;
@@ -180,7 +229,9 @@ void parse_url( int history_file, off_t currrecoff, char *delim, size_t filesize
   off_t dirnameoff;
   time_t modtime;
   time_t accesstime;
-  char ascmodtime[26], ascaccesstime[26];
+  struct timespec ts_modtime;
+  struct timespec ts_accesstime;
+  char ascmodtime[36], ascaccesstime[36];
   char dirname[9];
   char *url;
   char *filename;
@@ -192,22 +243,34 @@ void parse_url( int history_file, off_t currrecoff, char *delim, size_t filesize
   reclen = le32toh(fourbytes) * BLOCK_SIZE;
 
   pread( history_file, &eightbytes, 8, currrecoff+8 );
-  modtime = win_time_to_unix( le64toh(eightbytes), NULL );
+  modtime = win_time_to_unix( le64toh(eightbytes), &ts_modtime );
   
   pread( history_file, &eightbytes, 8, currrecoff+16 );
-  accesstime = win_time_to_unix( le64toh(eightbytes), NULL );
+  accesstime = win_time_to_unix( le64toh(eightbytes), &ts_accesstime );
  
-  ctime_r( &accesstime, ascaccesstime );
-  ctime_r( &modtime, ascmodtime );
-  
   if (accesstime == 0) {
     ascaccesstime[0] = '\0';
+  }
+  else {
+    if (isofmt) {
+      timespec_to_isoformat(&ts_accesstime, ascaccesstime );
+    }
+    else {
+      ctime_r( &accesstime, ascaccesstime );
+    }
   }
 
   if (modtime == 0) {
     ascmodtime[0] = '\0';
   }
-  
+  else {
+    if (isofmt) {
+      timespec_to_isoformat( &ts_modtime, ascmodtime );
+    }
+    else {
+      ctime_r( &modtime, ascmodtime );
+    }
+  }
   url = (char *)malloc( reclen+1 );
 
   pread( history_file, &chr, 1, currrecoff+0x34 );
@@ -306,6 +369,7 @@ void usage( void ) {
   printf("\nUsage:  pasco [options] <filename>\n" );
   printf("\t-d Undelete Activity Records\n" );
   printf("\t-t Field Delimiter (TAB by default)\n" );
+  printf("\t-i Use ISO 8601 format for time stamp\n" );
   printf("\n\n");
 }
 
@@ -328,6 +392,7 @@ int main( int argc, char **argv ) {
   off_t offset;
   // int hashrecflags;
   int deleted = 0;
+  int isofmt = 0;
 
 
   if (argc < 2) {
@@ -349,7 +414,7 @@ int main( int argc, char **argv ) {
   pread( history_file, &fourbytes, 4, 0x1C );
   filesize = le32toh(fourbytes);
 
-  while ((opt = getopt( argc, argv, "dt:f:")) != -1) {
+  while ((opt = getopt( argc, argv, "dti:f:")) != -1) {
     switch(opt) {
       case 't':
         strncpy( delim, optarg, 10 );
@@ -357,6 +422,10 @@ int main( int argc, char **argv ) {
 
       case 'd':
         deleted = 1;
+        break;
+
+      case 'i':
+        isofmt = 1;
         break;
 
       default:
@@ -399,7 +468,7 @@ int main( int argc, char **argv ) {
 
             } else if ( (type[0] == 'U' && type[1] == 'R' && type[2] == 'L') || (type[0] == 'L' && type[1] == 'E' && type[2] == 'A' && type[3] == 'K') ) {
 
-              parse_url( history_file, currrecoff, delim, filesize, type );
+              parse_url( history_file, currrecoff, delim, filesize, type , isofmt);
 
             } else {
 
@@ -426,7 +495,7 @@ int main( int argc, char **argv ) {
 
       } else if ( (type[0] == 'U' && type[1] == 'R' && type[2] == 'L') || (type[0] == 'L' && type[1] == 'E' && type[2] == 'A' && type[3] == 'K') ) {
 
-        parse_url( history_file, currrecoff, delim, filesize, type );
+        parse_url( history_file, currrecoff, delim, filesize, type, isofmt);
 
       } else {
 
