@@ -50,6 +50,8 @@
 # endif
 
 const char *revision = "$Id$";
+const unsigned int version_major = 1;
+const unsigned int version_minor = 1;
 
 //
 /* This is the default block size for an activity record */
@@ -362,7 +364,7 @@ void parse_url( int history_file, off_t currrecoff, char *delim, size_t filesize
   return;
 }
 
-void parse_unknown( int history_file, int currrecoff, char *delim, int filesize, char *type ) {
+void parse_unknown( int history_file, off_t currrecoff, char *delim, size_t filesize, char *type ) {
   type[0] = '\0'; 
   return;
 }
@@ -375,7 +377,14 @@ void usage( void ) {
   printf("\t-d Undelete Activity Records\n" );
   printf("\t-t Field Delimiter (TAB by default)\n" );
   printf("\t-i Use ISO 8601 format for time stamp\n" );
+  printf("\t-V print version and then exit\n" );
   printf("\n\n");
+  return;
+}
+
+void printversion( void ) {
+  printf("pasco ver. %u.%02u\n%s\n", version_major, version_minor, revision);
+  return;
 }
 
 
@@ -405,21 +414,7 @@ int main( int argc, char **argv ) {
     exit( -2 );
   }
 
-  strcpy( delim, "\t" );
-
-  printf("History File: %s\n\n", argv[argc-1]);
-  history_file = open( argv[argc-1], O_RDONLY, 0 );
-
-  if ( history_file <= 0 ) { 
-    printf("ERROR - The index.dat file cannot be opened!\n\n");
-    usage();
-    exit( -3 ); 
-  }
-
-  pread( history_file, &fourbytes, 4, 0x1C );
-  filesize = le32toh(fourbytes);
-
-  while ((opt = getopt( argc, argv, "dti:f:")) != -1) {
+  while ((opt = getopt( argc, argv, "diVt:f:")) != -1) {
     switch(opt) {
       case 't':
         strncpy( delim, optarg, 10 );
@@ -433,11 +428,31 @@ int main( int argc, char **argv ) {
         isofmt = 1;
         break;
 
+      case 'V':
+        printversion();
+        exit(0);
+        break;
+
       default:
         usage();
         exit(-1);
     }
   }
+
+
+  strcpy( delim, "\t" );
+
+  printf("History File: %s\n\n", argv[argc-1]);
+  history_file = open( argv[argc-1], O_RDONLY, 0 );
+
+  if ( history_file <= 0 ) {
+    printf("ERROR - The index.dat file cannot be opened!\n\n");
+    usage();
+    exit( -3 ); 
+  }
+
+  pread( history_file, &fourbytes, 4, 0x1C );
+  filesize = le32toh(fourbytes);
 
   printf( "TYPE%sURL%sMODIFIED TIME%sACCESS TIME%sFILENAME%sDIRECTORY%sHTTP HEADERS\n", delim, delim, delim, delim, delim, delim );
 
