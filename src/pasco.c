@@ -121,7 +121,7 @@ void timespec_to_isoformat(const struct timespec *ts, char *isostr){
   if (ts->tv_nsec  == 0) {
     snprintf(isostr, 26, "%04u-%02u-%02uT%02u:%02u:%02u%s",
         (unsigned int) (tm_p->tm_year + 1900),
-        (unsigned int) tm_p->tm_mon,
+        (unsigned int) (tm_p->tm_mon + 1),
         (unsigned int) tm_p->tm_mday,
         (unsigned int) tm_p->tm_hour,
         (unsigned int) tm_p->tm_min,
@@ -131,7 +131,7 @@ void timespec_to_isoformat(const struct timespec *ts, char *isostr){
   else {
     snprintf(isostr, 36, "%04u-%02u-%02uT%02u:%02u:%02u.%09lu%s",
         (unsigned int) (tm_p->tm_year + 1900),
-        (unsigned int) tm_p->tm_mon,
+        (unsigned int) (tm_p->tm_mon + 1),
         (unsigned int) tm_p->tm_mday,
         (unsigned int) tm_p->tm_hour,
         (unsigned int) tm_p->tm_min,
