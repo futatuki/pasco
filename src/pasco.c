@@ -29,7 +29,7 @@
 
 
 #include <sys/types.h>
-#include <sys/uio.h>
+// #include <sys/uio.h>
 #include <stdint.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -47,6 +47,9 @@
 #  include <libkern/OSByteOrder.h>
 #  define le32toh(x) OSSwapLittleToHostInt32(x)
 #  define le64toh(x) OSSwapLittleToHostInt64(x)
+# elif defined(__MINGW32__)
+#  define le32toh(x) (x)
+#  define le64toh(x) (x)
 # endif
 
 const char *revision = "$Id$";
@@ -58,19 +61,33 @@ const unsigned int version_minor = 1;
 //
 #define BLOCK_SIZE	0x80
 
-#ifdef CYGWIN
+#if defined(CYGWIN) || defined(__MINGW32__)
 ssize_t pread( int d, void *buf, size_t nbytes, off_t offset) {
   lseek( d, offset, SEEK_SET );
-  read( d, buf, nbytes );
+  return read( d, buf, nbytes );
 }
 #endif
 
+# if defined(__MINGW32__)
+struct timespec {
+  __time64_t tv_sec;
+  long   tv_nsec; 
+};
+
+char * ctime_r(const time_t *clock, char *buf) {
+  char *cp;
+  cp = ctime(clock);
+  strncpy(buf, cp, 26);
+  return buf;
+}
+# endif
+
 //
-/* uint64_t Windows NT time stamp to time_t (and timespec) Unix Timestamp */
+/* int64_t Windows NT time stamp to time_t (and timespec) Unix Timestamp */
 //
-time_t win_time_to_unix( uint64_t val , struct timespec *ts) {
+time_t win_time_to_unix( int64_t val, struct timespec *ts) {
   long nsec;
-  time_t sec;
+  int64_t sec;
 
   if (val == 0) {
     sec = 0; 
@@ -87,7 +104,10 @@ time_t win_time_to_unix( uint64_t val , struct timespec *ts) {
       ts->tv_nsec = nsec;
     }
   }
-  return sec;
+  if (sizeof(time_t) == sizeof(int32_t) && sec > (int64_t)INT32_MAX) {
+    sec = -1;
+  }
+  return (time_t)sec;
 }
 
 //
@@ -99,45 +119,60 @@ void timespec_to_isoformat(const struct timespec *ts, char *isostr){
   char toffsign;
   int toffh, toffm;
   char toffstr[7];
+# if !defined(__MINGW32__)
+  long _timezone;
+# endif
 
-  tm_p = localtime(&(ts->tv_sec)); 
-  if (tm_p->tm_gmtoff != 0) {
-    if (tm_p->tm_gmtoff > 0) {
-      toffsign = '+';
-      toff = tm_p->tm_gmtoff / 60; 
+  tm_p = localtime(&(ts->tv_sec));
+# if !defined(__MINGW32__)
+  _timezone = tm_p->tm_gmtoff;
+# endif
+
+  if (tm_p == NULL) {
+    strncpy(isostr, "#data corrupted#", 26);
+  }
+  else if (tm_p->tm_year < 70 || tm_p->tm_year > 8099) { 
+    strncpy(isostr, "#Out of range#", 26);
+  }
+  else {
+    if (_timezone != 0) {
+      if (_timezone > 0) {
+        toffsign = '+';
+        toff = _timezone / 60; 
+      }
+      else {
+        toffsign = '-';
+        toff = - _timezone / 60; 
+      }
+      toffh = toff / 60;
+      toffm = toff % 60;
+      snprintf(toffstr, 7, "%c%02u:%02u",
+          toffsign, (unsigned int)toffh, (unsigned int)toffm);
     }
     else {
-      toffsign = '-';
-      toff = - tm_p->tm_gmtoff / 60; 
+      toffstr[0] = 'Z', toffstr[1] = '\0';
     }
-    toffh = toff / 60;
-    toffm = toff % 60;
-    snprintf(toffstr, 7, "%c%02u:%02u",
-        toffsign, (unsigned int)toffh, (unsigned int)toffm);
-  }
-  else {
-    toffstr[0] = 'Z', toffstr[1] = '\0';
-  }
-  if (ts->tv_nsec  == 0) {
-    snprintf(isostr, 26, "%04u-%02u-%02uT%02u:%02u:%02u%s",
-        (unsigned int) (tm_p->tm_year + 1900),
-        (unsigned int) (tm_p->tm_mon + 1),
-        (unsigned int) tm_p->tm_mday,
-        (unsigned int) tm_p->tm_hour,
-        (unsigned int) tm_p->tm_min,
-        (unsigned int) tm_p->tm_sec,
-        toffstr);
-  }
-  else {
-    snprintf(isostr, 36, "%04u-%02u-%02uT%02u:%02u:%02u.%09lu%s",
-        (unsigned int) (tm_p->tm_year + 1900),
-        (unsigned int) (tm_p->tm_mon + 1),
-        (unsigned int) tm_p->tm_mday,
-        (unsigned int) tm_p->tm_hour,
-        (unsigned int) tm_p->tm_min,
-        (unsigned int) tm_p->tm_sec,
-        (unsigned long) (ts->tv_nsec),
-        toffstr);
+    if (ts->tv_nsec  == 0) {
+      snprintf(isostr, 26, "%04u-%02u-%02uT%02u:%02u:%02u%s",
+          (unsigned int) (tm_p->tm_year + 1900),
+          (unsigned int) (tm_p->tm_mon + 1),
+          (unsigned int) tm_p->tm_mday,
+          (unsigned int) tm_p->tm_hour,
+          (unsigned int) tm_p->tm_min,
+          (unsigned int) tm_p->tm_sec,
+          toffstr);
+    }
+    else {
+      snprintf(isostr, 36, "%04u-%02u-%02uT%02u:%02u:%02u.%09lu%s",
+          (unsigned int) (tm_p->tm_year + 1900),
+          (unsigned int) (tm_p->tm_mon + 1),
+          (unsigned int) tm_p->tm_mday,
+          (unsigned int) tm_p->tm_hour,
+          (unsigned int) tm_p->tm_min,
+          (unsigned int) tm_p->tm_sec,
+          (unsigned long) (ts->tv_nsec),
+          toffstr);
+    }
   }
   return;
 }
@@ -156,6 +191,31 @@ int printablestring( char *str ) {
     i++; 
   }
   return 0;
+}
+
+void corrupt_data_warn(const char *fn, const char *ctx, off_t offset) {
+# if !defined(__MINGW32__)
+  /* I belive most environment in C99 implement 'll' modifier ... */
+  fprintf(stderr,
+      "warn: corrupted data or unknown structure in %s, %s field: "
+      "offset: 0x%llx\n", fn, ctx, (long long)offset);
+
+# else /* defined __MINGW32__ */
+  /* but it is not in MINGW32 environment... */
+  /* assuming off_t == long (32bit) */
+
+  if (sizeof(off_t) <= sizeof(unsigned long)) {
+    fprintf(stderr,
+        "warn: corrupted data or unknown structure in %s, %s field: "
+        "offset: 0x%lx\n", fn, ctx, (long)offset);
+  }
+  else {
+    /* give up to print offset ... */
+    fprintf(stderr,
+        "warn: corrupted data or unknown structure in %s, %s field\n", fn, ctx);
+  }
+# endif
+  return;
 }
 
 //
@@ -186,11 +246,8 @@ void parse_redr( int history_file, off_t currrecoff, const char *delim, size_t f
   }
   *cp = '\0';
   if (i == reclen) {
-      fprintf(stderr,
-          "warn: corrupted data or unknown structure in parse_redr: "
-          "offset: 0x%llx\n", (long long)currrecoff);
+    corrupt_data_warn("parse_redr", "url", currrecoff); 
   }
-
 
   filename = (char *)malloc( 1 );
   filename[0] = '\0';
@@ -250,13 +307,16 @@ void parse_url( int history_file, off_t currrecoff, char *delim, size_t filesize
   reclen = le32toh(fourbytes) * BLOCK_SIZE;
 
   pread( history_file, &eightbytes, 8, currrecoff+8 );
-  modtime = win_time_to_unix( le64toh(eightbytes), &ts_modtime );
+  modtime = win_time_to_unix( (int64_t)le64toh(eightbytes), &ts_modtime );
   
   pread( history_file, &eightbytes, 8, currrecoff+16 );
-  accesstime = win_time_to_unix( le64toh(eightbytes), &ts_accesstime );
+  accesstime = win_time_to_unix( (int64_t)le64toh(eightbytes), &ts_accesstime );
  
   if (accesstime == 0) {
     ascaccesstime[0] = '\0';
+  }
+  else if (accesstime == -1) {
+    strncpy(ascaccesstime, "#overflow#", 36);
   }
   else {
     if (isofmt) {
@@ -269,6 +329,9 @@ void parse_url( int history_file, off_t currrecoff, char *delim, size_t filesize
 
   if (modtime == 0) {
     ascmodtime[0] = '\0';
+  }
+  else if (modtime == -1) {
+    strncpy(ascmodtime, "#overflow#", 36);
   }
   else {
     if (isofmt) {
@@ -288,9 +351,7 @@ void parse_url( int history_file, off_t currrecoff, char *delim, size_t filesize
   }
   *cp = '\0';
   if (i == reclen) {
-      fprintf(stderr,
-          "warn: corrupted data or unknown structure in parse_url, url field: "
-          "offset: 0x%llx\n", (long long)currrecoff);
+    corrupt_data_warn("parse_url", "url", currrecoff); 
   }
 
   filename = (char *)malloc( reclen+1 );
@@ -306,9 +367,7 @@ void parse_url( int history_file, off_t currrecoff, char *delim, size_t filesize
   }
   *cp = '\0';
   if (i == reclen) {
-      fprintf(stderr,
-          "warn: corrupted data or unknown structure in parse_url, filename field: "
-          "offset: 0x%llx\n", (long long)currrecoff);
+    corrupt_data_warn("parse_url", "filename", currrecoff); 
   }
 
 
@@ -334,9 +393,7 @@ void parse_url( int history_file, off_t currrecoff, char *delim, size_t filesize
   }
   *cp = '\0';
   if (i == reclen) {
-      fprintf(stderr,
-          "warn: corrupted data or unknown structure in parse_url, httpheaders field: "
-          "offset: 0x%llx\n", (long long)currrecoff);
+    corrupt_data_warn("parse_url", "dirname", currrecoff); 
   }
 
   printablestring( type );

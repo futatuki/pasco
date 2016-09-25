@@ -3,6 +3,7 @@
 all: pasco
 
 CC ?= gcc 
+MINGW32_CC = mingw32-gcc
 
 install:  pasco
 	cp pasco ../bin
@@ -13,8 +14,11 @@ pasco:  pasco.c
 installwin:  pasco.exe
 	pasco.exe ../bin
 
+#pasco.exe:  pasco.c
+#	gcc -DCYGWIN -o pasco.exe pasco.c -lc;cp pasco.exe ../bin
+
 pasco.exe:  pasco.c
-	gcc -DCYGWIN -o pasco.exe pasco.c -lc;cp pasco.exe ../bin
+	${MINGW32_CC} -Wall -o pasco.exe pasco.c
 
 clean: 
 	rm -f pasco.exe pasco
