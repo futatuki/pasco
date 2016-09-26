@@ -315,7 +315,7 @@ void parse_url( int history_file, off_t currrecoff, char *delim, size_t filesize
   if (accesstime == 0) {
     ascaccesstime[0] = '\0';
   }
-  else if (accesstime == -1) {
+  else if (accesstime < 0) {
     strncpy(ascaccesstime, "#overflow#", 36);
   }
   else {
@@ -330,7 +330,7 @@ void parse_url( int history_file, off_t currrecoff, char *delim, size_t filesize
   if (modtime == 0) {
     ascmodtime[0] = '\0';
   }
-  else if (modtime == -1) {
+  else if (modtime < 0) {
     strncpy(ascmodtime, "#overflow#", 36);
   }
   else {
