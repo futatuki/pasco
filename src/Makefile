@@ -12,7 +12,7 @@ pasco:  pasco.c
 	${CC} -Wall -o pasco pasco.c -lc
 
 installwin:  pasco.exe
-	pasco.exe ../bin
+	cp pasco.exe ../bin
 
 #pasco.exe:  pasco.c
 #	gcc -DCYGWIN -o pasco.exe pasco.c -lc;cp pasco.exe ../bin
