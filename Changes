@@ -1,0 +1,17 @@
+Version 1.01 
+(Mon Sep 26 2016) Yasuhito FUTATSUKI <futatuki@yf.bsdclub.org>
+
+ Features:
+   - new option '-i' to select ISO style date and time format.
+   - new option '-V' to print version
+   - add support for MinGW32 for build environment (tested on FreeBSD/amd64)
+
+ Bug fixes:
+   - take care for size of integer type.
+   - avoid buffer overrun when data is corrupted.
+
+ Other changes:
+   - fix Windows NT time to Unix time conversion not to use floating point
+     calculation.
+   - drop support for Cygwin for build environment (may work or not,
+     but not tested)
