@@ -35,7 +35,6 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <time.h>
-#include <math.h>
 #include <string.h>
 #include <stdlib.h>
 # if defined(__OpenBSD__) || defined(__NetBSD__) || defined(__FreeBSD__) \
