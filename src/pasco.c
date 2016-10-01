@@ -53,7 +53,7 @@
 
 const char *revision = "$Id$";
 const unsigned int version_major = 1;
-const unsigned int version_minor = 1;
+const unsigned int version_minor = 2;
 
 //
 /* This is the default block size for an activity record */
@@ -370,10 +370,13 @@ void parse_url( int history_file, off_t currrecoff, char *delim, size_t filesize
   }
 
 
-  pread( history_file, &chr, 1, currrecoff+0x39 );
+  pread( history_file, &chr, 1, currrecoff+0x38 );
   dirnameoff = (unsigned char)chr;
-
-  if (0x50+(12*dirnameoff)+8 < filesize) {
+  if (dirnameoff >= 32) {
+    corrupt_data_warn("parse_url", "dirname index(exceeds 32)", currrecoff); 
+    dirname[0] = '\0';
+  }
+  else if (0x50+(12*dirnameoff)+8 < filesize) {
     pread( history_file, dirname, 8, 0x50+(12*dirnameoff) );
     dirname[8] = '\0';
   } else {

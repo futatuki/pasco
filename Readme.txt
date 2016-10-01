@@ -1,4 +1,4 @@
-PASCO 1.01
+PASCO 1.02
 ---------
 
 Usage: pasco [options] <filename>

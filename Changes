@@ -1,9 +1,13 @@
 Version 1.02
-(not released)
+(Sun Oct 02 2016) Yasuhito FUTATSUKI <futatuki@yf.bsdclub.org>
 
  Features:
    - detect unallocated record marked as 'deadbeaf'. (for IE8 and IE9)
    - detect hash offset not aligned on dword boundary.
+
+ Bug fixes:
+   - correct offset to read cache directory name index. (i.e. up to
+     previous version, the DIRECTORY field has shown wrong directory name) 
 
 Version 1.01
 (Mon Sep 26 2016) Yasuhito FUTATSUKI <futatuki@yf.bsdclub.org>
