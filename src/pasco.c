@@ -532,8 +532,13 @@ int main( int argc, char **argv ) {
         pread( history_file, &fourbytes, 4, offset+4 );
         currrecoff = le32toh(fourbytes);
 
-        if (hashrecflagsstr[0] != 0x03 && currrecoff != 0xBADF00D ) {
-          if (currrecoff != 0) {
+        if (   hashrecflagsstr[0] != 0x03 
+            && currrecoff != 0xBADF00D && currrecoff != 0xDEADBEEF ) {
+          if (currrecoff & 3) {
+            fprintf(stderr, "warn: record offset is not aligned to dword: "
+                    "offset = 0x%0lx\n", (long)currrecoff);
+          }
+          else if (currrecoff != 0) {
 
             pread( history_file, type, 4, currrecoff );
             type[4] = '\0';

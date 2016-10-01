@@ -1,4 +1,11 @@
-Version 1.01 
+Version 1.02
+(not released)
+
+ Features:
+   - detect unallocated record marked as 'deadbeaf'. (for IE8 and IE9)
+   - detect hash offset not aligned on dword boundary.
+
+Version 1.01
 (Mon Sep 26 2016) Yasuhito FUTATSUKI <futatuki@yf.bsdclub.org>
 
  Features:
