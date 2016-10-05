@@ -1,3 +1,11 @@
+Version 1.03
+(Not released)
+
+ Features:
+   - detect index header corruption and exit if deleted data mode or
+     force mode (with new option -V) is not specified.
+   - detect file size from fstat(2) if header file seems to be corrupted.
+
 Version 1.02
 (Sun Oct 02 2016) Yasuhito FUTATSUKI <futatuki@yf.bsdclub.org>
 

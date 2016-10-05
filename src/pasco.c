@@ -35,6 +35,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <time.h>
+#include <sys/stat.h>
 #include <string.h>
 #include <stdlib.h>
 # if defined(__OpenBSD__) || defined(__NetBSD__) || defined(__FreeBSD__) \
@@ -59,6 +60,9 @@ const unsigned int version_minor = 2;
 /* This is the default block size for an activity record */
 //
 #define BLOCK_SIZE	0x80
+
+# define MSIE4HISTORY_SIGNATURE "Client UrlCache MMF Ver 4.7"
+# define MSIE5HISTORY_SIGNATURE "Client UrlCache MMF Ver 5.2"
 
 #if defined(CYGWIN) || defined(__MINGW32__)
 ssize_t pread( int d, void *buf, size_t nbytes, off_t offset) {
@@ -436,6 +440,8 @@ void usage( void ) {
   printf("\t-d Undelete Activity Records\n" );
   printf("\t-t Field Delimiter (TAB by default)\n" );
   printf("\t-i Use ISO 8601 format for time stamp\n" );
+  printf("\t-F Force read header from index file \n"
+         "\t   which does not contain known file signature\n" );
   printf("\t-V print version and then exit\n" );
   printf("\n\n");
   return;
@@ -466,6 +472,9 @@ int main( int argc, char **argv ) {
   // int hashrecflags;
   int deleted = 0;
   int isofmt = 0;
+  int force = 0;
+  char filesignature[28];
+  struct stat sb;
 
 
   if (argc < 2) {
@@ -473,7 +482,7 @@ int main( int argc, char **argv ) {
     exit( -2 );
   }
 
-  while ((opt = getopt( argc, argv, "diVt:f:")) != -1) {
+  while ((opt = getopt( argc, argv, "diFVt:f:")) != -1) {
     switch(opt) {
       case 't':
         strncpy( delim, optarg, 10 );
@@ -486,6 +495,9 @@ int main( int argc, char **argv ) {
       case 'i':
         isofmt = 1;
         break;
+
+      case 'F':
+        force = 1;
 
       case 'V':
         printversion();
@@ -507,11 +519,40 @@ int main( int argc, char **argv ) {
   if ( history_file <= 0 ) {
     printf("ERROR - The index.dat file cannot be opened!\n\n");
     usage();
-    exit( -3 ); 
+    exit( -3 );
   }
 
-  pread( history_file, &fourbytes, 4, 0x1C );
-  filesize = le32toh(fourbytes);
+  pread( history_file, filesignature, 0x1C, 0);
+  if (   ! strncmp(filesignature, MSIE4HISTORY_SIGNATURE, 0x1C)
+      || ! strncmp(filesignature, MSIE5HISTORY_SIGNATURE, 0x1C) ) {
+    pread( history_file, &fourbytes, 4, 0x1C );
+    filesize = le32toh(fourbytes);
+  }
+  else {
+    fprintf(stderr,
+            "warn: file is corrupted or not WinInet index.dat file: %s\n\n",
+            argv[argc-1]);
+    if (! force && ! deleted ) {
+      fprintf(stderr,
+              "  As neither deleted flag nor force flag is set, "
+              "give up reading index.dat.\n"
+              "Please try -d flag for salvage records from "
+              "completely corrupt file, or try\n"
+              "-F flag if you beleive the header information "
+              "is reliable.\n\n");
+      exit( -4 );
+    }
+    if (fstat(history_file, &sb)) {
+      fprintf(stderr,
+              "warn: cannot stat index.dat file: %s\n",
+              argv[argc-1]);
+      filesize = lseek(history_file, 0, SEEK_END);
+      lseek(history_file, 0, SEEK_SET);        
+    }
+    else {
+      filesize = sb.st_size;
+    }
+  }
 
   printf( "TYPE%sURL%sMODIFIED TIME%sACCESS TIME%sFILENAME%sDIRECTORY%sHTTP HEADERS\n", delim, delim, delim, delim, delim, delim );
 
