@@ -31,6 +31,7 @@
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <time.h>
@@ -122,7 +123,7 @@ int printablestring( char *str ) {
 //
 /* This function parses a REDR record. */
 //
-int parse_redr( int history_file, int currrecoff, char *delim, int filesize, char *type ) {
+int parse_redr( int history_file, double filever, int currrecoff, char *delim, int filesize, char *type ) {
   char fourbytes[4];
   char hashrecflagsstr[4];
   char chr;
@@ -185,7 +186,7 @@ int parse_redr( int history_file, int currrecoff, char *delim, int filesize, cha
 //
 /* This function parses a URL and LEAK activity record. */
 //
-int parse_url( int history_file, int currrecoff, char *delim, int filesize, char *type ) {
+int parse_url( int history_file, double filever, int currrecoff, char *delim, int filesize, char *type ) {
   char fourbytes[4];
   char hashrecflagsstr[4];
   char eightbytes[8];
@@ -203,7 +204,8 @@ int parse_url( int history_file, int currrecoff, char *delim, int filesize, char
   char *url;
   char *filename;
   char *httpheaders;
-
+  int year, mon;
+  struct tm *accesstm, *modtm;
 
   pread( history_file, fourbytes, 4, currrecoff+4 );
   reclen = bah_to_i( fourbytes, 4 )*BLOCK_SIZE; 
@@ -214,8 +216,15 @@ int parse_url( int history_file, int currrecoff, char *delim, int filesize, char
   pread( history_file, eightbytes, 8, currrecoff+16 );
   accesstime = win_time_to_unix( eightbytes );
  
-  ctime_r( &accesstime, ascaccesstime );
-  ctime_r( &modtime, ascmodtime );
+  accesstm = localtime( &accesstime );
+  year = accesstm->tm_year + 1900;
+  mon = accesstm->tm_mon + 1;
+  sprintf( ascaccesstime, "%02d/%02d/%02d %02d:%02d:%02d", mon, accesstm->tm_mday, year, accesstm->tm_hour, accesstm->tm_min, accesstm->tm_sec );
+
+  modtm = localtime( &modtime );
+  year = modtm->tm_year + 1900;
+  mon = modtm->tm_mon + 1;
+  sprintf( ascmodtime, "%02d/%02d/%02d %02d:%02d:%02d", mon, modtm->tm_mday, year, modtm->tm_hour, modtm->tm_min, modtm->tm_sec );
   
   if (accesstime == 0) {
     ascaccesstime[0] = '\0';
@@ -227,7 +236,11 @@ int parse_url( int history_file, int currrecoff, char *delim, int filesize, char
   
   url = (char *)malloc( reclen+1 );
 
-  pread( history_file, &chr, 1, currrecoff+0x34 );
+  if (filever >= 5) {
+    pread( history_file, &chr, 1, currrecoff+0x34 );
+  } else {
+    pread( history_file, &chr, 1, currrecoff+0x38 );    
+  }
   urloff = (unsigned char)chr;
 
   i = 0;
@@ -241,19 +254,31 @@ int parse_url( int history_file, int currrecoff, char *delim, int filesize, char
 
   filename = (char *)malloc( reclen+1 );
 
-  pread( history_file, fourbytes, 4, currrecoff+0x3C );
+  if (filever >= 5) {
+    pread( history_file, fourbytes, 4, currrecoff+0x3C );
+  } else {
+    pread( history_file, fourbytes, 4, currrecoff+0x40 );
+  }
   filenameoff = bah_to_i( fourbytes, 4 ) + currrecoff; 
 
   i = 0;
-  pread( history_file, &chr, 1, filenameoff );
-  while ( chr != '\0' && filenameoff+i+1 < filesize ) {
-    filename[i] = chr;
-    pread( history_file, &chr, 1, filenameoff+i+1 );
-    i++; 
-  } 
+  if (filenameoff > currrecoff+0x3C) {
+    pread( history_file, &chr, 1, filenameoff );
+    while ( chr != '\0' && filenameoff+i+1 < filesize ) {
+      filename[i] = chr;
+      pread( history_file, &chr, 1, filenameoff+i+1 );
+      i++; 
+    } 
+  }
   filename[i] = '\0';
 
-  pread( history_file, &chr, 1, currrecoff+0x39 );
+  if (filever >= 5.2) {
+    pread( history_file, &chr, 1, currrecoff+0x38 );
+  } else if (filever >= 5) {
+    pread( history_file, &chr, 1, currrecoff+0x39 );
+  } else {
+    pread( history_file, &chr, 1, currrecoff+0x3C );
+  }
   dirnameoff = (unsigned char)chr;
 
   if (0x50+(12*dirnameoff)+8 < filesize) {
@@ -265,16 +290,22 @@ int parse_url( int history_file, int currrecoff, char *delim, int filesize, char
 
   httpheaders = (char *)malloc( reclen+1 );
 
-  pread( history_file, fourbytes, 4, currrecoff+0x44 );
+  if (filever >= 5) {
+    pread( history_file, fourbytes, 4, currrecoff+0x44 );
+  } else {
+    pread( history_file, fourbytes, 4, currrecoff+0x48 );
+  }
   httpheadersoff = bah_to_i( fourbytes, 4 ) + currrecoff; 
 
   i = 0;
-  pread( history_file, &chr, 1, httpheadersoff );
+  if (httpheadersoff > currrecoff+0x44) {
+    pread( history_file, &chr, 1, httpheadersoff );
 
-  while ( chr != '\0' && httpheadersoff+i+1 < currrecoff+reclen && httpheadersoff+i+1 < filesize ) {
-    httpheaders[i] = chr;
-    pread( history_file, &chr, 1, httpheadersoff+i+1 );
-    i++; 
+    while ( chr != '\0' && httpheadersoff+i+1 < currrecoff+reclen && httpheadersoff+i+1 < filesize ) {
+      httpheaders[i] = chr;
+      pread( history_file, &chr, 1, httpheadersoff+i+1 );
+      i++; 
+    }
   } 
   httpheaders[i] = '\0';
  
@@ -302,7 +333,7 @@ int parse_url( int history_file, int currrecoff, char *delim, int filesize, char
   free( httpheaders );
 }
 
-int parse_unknown( int history_file, int currrecoff, char *delim, int filesize, char *type ) {
+int parse_unknown( int history_file, double filever, int currrecoff, char *delim, int filesize, char *type ) {
   type[0] = '\0'; 
 }
 
@@ -339,7 +370,7 @@ int main( int argc, char **argv ) {
   int offset;
   int hashrecflags;
   int deleted = 0;
-
+  double filever;
 
   if (argc < 2) {
     usage();
@@ -348,7 +379,6 @@ int main( int argc, char **argv ) {
 
   strcpy( delim, "\t" );
 
-  printf("History File: %s\n\n", argv[argc-1]);
   history_file = open( argv[argc-1], O_RDONLY, 0 );
 
   if ( history_file <= 0 ) { 
@@ -356,6 +386,10 @@ int main( int argc, char **argv ) {
     usage();
     exit( -3 ); 
   }
+
+  pread( history_file, fourbytes, 4, 0x18 );
+  filever = atof( fourbytes );
+  printf("History File: %s Version: %.1f\n\n", argv[argc-1], filever);
 
   pread( history_file, fourbytes, 4, 0x1C );
   filesize = bah_to_i( fourbytes, 4 );
@@ -411,15 +445,15 @@ int main( int argc, char **argv ) {
 
             if (type[0] == 'R' && type[1] == 'E' && type[2] == 'D' && type[3] == 'R' ) {
 
-              parse_redr( history_file, currrecoff, delim, filesize, type );
+              parse_redr( history_file, filever, currrecoff, delim, filesize, type );
 
             } else if ( (type[0] == 'U' && type[1] == 'R' && type[2] == 'L') || (type[0] == 'L' && type[1] == 'E' && type[2] == 'A' && type[3] == 'K') ) {
 
-              parse_url( history_file, currrecoff, delim, filesize, type );
+              parse_url( history_file, filever, currrecoff, delim, filesize, type );
 
             } else {
 
-              parse_unknown( history_file, currrecoff, delim, filesize, type );
+              parse_unknown( history_file, filever, currrecoff, delim, filesize, type );
 
             }
           }
@@ -442,15 +476,15 @@ int main( int argc, char **argv ) {
 
       if (type[0] == 'R' && type[1] == 'E' && type[2] == 'D' && type[3] == 'R' ) {
 
-        parse_redr( history_file, currrecoff, delim, filesize, type );
+        parse_redr( history_file, filever, currrecoff, delim, filesize, type );
 
       } else if ( (type[0] == 'U' && type[1] == 'R' && type[2] == 'L') || (type[0] == 'L' && type[1] == 'E' && type[2] == 'A' && type[3] == 'K') ) {
 
-        parse_url( history_file, currrecoff, delim, filesize, type );
+        parse_url( history_file, filever, currrecoff, delim, filesize, type );
 
       } else {
 
-        parse_unknown( history_file, currrecoff, delim, filesize, type );
+        parse_unknown( history_file, filever, currrecoff, delim, filesize, type );
 
       }
 

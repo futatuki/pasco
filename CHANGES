@@ -1,0 +1,4 @@
+5 May 2004 - Bugfixed the directory name offset for v5.2 index.dat files (kjj)
+5 May 2004 - Changed the date output for easier sorting in spreadsheets (kjj)
+5 May 2003 - Added support for v4 index.dat files (kjj)
+5 May 2003 - Fixed problem when HTTP headers and filenames are missing. (kjj)
